@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inbox Approval Desk</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1b1e24;--mut:#5a606b;--line:#e2e0da;--acc:#35507a;--ok:#1f6b45;--bad:#a12f2f;--warn:#fbf1dc;--warnink:#6d4b0e}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1d2026;--ink:#ecebe7;--mut:#a4a9b3;--line:#32363e;--acc:#a9c1e6;--ok:#73cc9f;--bad:#f09a9a;--warn:#33291a;--warnink:#f0d29c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1040px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0}h2{font-size:15px;margin:0 0 10px}
+.sub{color:var(--mut);margin:4px 0 14px}
+.banner{background:var(--warn);color:var(--warnink);padding:9px 12px;border-radius:8px;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
+@media (max-width:800px){.grid{grid-template-columns:minmax(0,1fr)}}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:16px}
+.draft{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.draft:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.meta{color:var(--mut);font-size:13px;overflow-wrap:anywhere}
+blockquote{margin:8px 0;padding:8px 10px;border-left:3px solid var(--line);color:var(--mut);white-space:pre-wrap;overflow-wrap:anywhere}
+.reply{white-space:pre-wrap;margin:8px 0;overflow-wrap:anywhere}
+button{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+button.primary{background:var(--acc);border-color:var(--acc);color:var(--card)}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+ul{list-style:none;margin:0;padding:0}li{padding:6px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}li:first-child{border-top:0}
+.tag{font-size:12px;color:var(--bad);font-weight:600}.empty{color:var(--mut)}
+#msg{min-height:22px;margin:0 0 10px;color:var(--ok)}#msg.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Inbox Approval Desk</h1>
+  <p class="sub">The assistant can read mail and prepare replies. Only a person can send one.</p>
+  <p class="banner" id="notice"></p>
+  <p id="msg" role="status" aria-live="polite"></p>
+  <div class="grid">
+    <div>
+      <section aria-labelledby="h-pending"><h2 id="h-pending">Waiting for your approval</h2><div id="pending"></div></section>
+      <section aria-labelledby="h-outbox"><h2 id="h-outbox">Sent (simulated)</h2><ul id="outbox"></ul></section>
+    </div>
+    <div>
+      <section aria-labelledby="h-inbox"><h2 id="h-inbox">Inbox</h2><ul id="inbox"></ul></section>
+      <section aria-labelledby="h-audit"><h2 id="h-audit">Activity log</h2><ul id="audit"></ul></section>
+    </div>
+  </div>
+</main>
+<script>
+const token = '__SESSION_TOKEN__';
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+const say = (text, bad) => { $('msg').textContent = text; $('msg').className = bad ? 'err' : ''; };
+async function decide(draft, action) {
+  const res = await fetch(`/api/drafts/${draft.id}/${action}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-session-token': token }, body: JSON.stringify({ content_hash: draft.content_hash }) });
+  const out = await res.json();
+  say(res.ok ? (action === 'approve' ? `Sent (simulated) to ${out.to}.` : 'Draft rejected. Nothing was sent.') : out.message, !res.ok);
+  await load();
+}
+function list(id, rows, render, empty) {
+  const root = $(id); root.replaceChildren();
+  if (!rows.length) root.append(el('li', 'empty', empty));
+  rows.forEach(row => root.append(render(row)));
+}
+async function load() {
+  const s = await (await fetch('/api/state')).json();
+  $('notice').textContent = s.notice;
+  const pending = $('pending'); pending.replaceChildren();
+  if (!s.pending.length) pending.append(el('p', 'empty', 'Nothing is waiting. Drafts created by the assistant appear here.'));
+  for (const d of s.pending) {
+    const box = el('article', 'draft');
+    box.append(el('div', 'meta', `To ${d.to_address} · ${d.mailbox}`), el('strong', '', d.subject),
+      el('div', 'meta', `Original message from ${d.original_from}`), el('blockquote', '', d.original_body), el('div', 'reply', d.body));
+    const row = el('div', 'row');
+    const yes = el('button', 'primary', 'Approve and send'); yes.onclick = () => decide(d, 'approve');
+    const no = el('button', '', 'Reject'); no.onclick = () => decide(d, 'reject');
+    row.append(yes, no); box.append(row); pending.append(box);
+  }
+  list('outbox', s.outbox, m => el('li', '', `${m.to_address}: ${m.subject}`), 'Nothing has been sent.');
+  list('inbox', s.inbox, m => { const li = el('li'); li.append(el('div', '', m.subject), el('div', 'meta', `${m.from_address} · ${m.mailbox}`)); if (m.risk !== 'none') li.append(el('span', 'tag', `Blocked: ${m.risk.replaceAll('_', ' ')}`)); return li; }, 'No mail.');
+  list('audit', s.audit, a => el('li', 'meta', `${a.at.slice(11, 19)} ${a.actor}: ${a.action}`), 'No activity yet.');
+}
+load().catch(() => say('Could not load the desk.', true));
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "inbox-approval-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Connect two fictional mailboxes to an MCP host; nothing leaves without a human approval.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node server.js",
+    "web": "node web.js",
+    "client": "node client.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.6.7"
+  }
+}
